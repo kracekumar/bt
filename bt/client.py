@@ -122,11 +122,10 @@ class DownloadManager:
 
         self.remove_from_pending_pieces(peer_id, piece_index,
                                         block_offset, data)
-        res = self.update_ongoing_pieces(peer_id, piece_index,
+        piece = self.update_ongoing_pieces(peer_id, piece_index,
                                          block_offset, data)
-        if res:
-            self.update_have_pieces(peer_id, piece_index,
-                                    block_offset, data)
+        if piece:
+            self.update_have_piece(piece)
 
     def remove_from_pending_pieces(self, peer_id,
                                    piece_index, block_offset, data):
@@ -204,7 +203,6 @@ class DownloadManager:
     def _expired_request(self, peer_id):
         """
         """
-        #logger.debug('Checking expired request')
         current = int(round(time.time() * 1000))
         for request in self.pending_blocks:
             if self.peers[peer_id][request.block.piece]:
@@ -219,7 +217,6 @@ class DownloadManager:
         return None
 
     def _next_ongoing(self, peer_id):
-        #logger.debug('Checking next ongoing')
         for piece in self.ongoing_pieces:
             if self.peers[peer_id][piece.index]:
                 # Is there any blocks left to request in this piece?
@@ -288,7 +285,7 @@ class Client:
                 available_peers=self.available_peers,
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
-                          for _ in range(10)]
+                          for _ in range(7)]
 
             await self.monitor()
 
@@ -314,7 +311,7 @@ class Client:
                     first=self.previous if self.previous else False,
                     uploaded=self.download_manager.bytes_uploaded,
                     downloaded=self.download_manager.bytes_downloaded)
-
+                logger.info('Tracker response: {}'.format(response))
                 if response:
                     self.previous = current
                     interval = response.interval

@@ -166,7 +166,8 @@ class PeerStreamIterator:
                 else:
                     logger.debug('Unsupported message!')
             else:
-                logger.debug('Not enough in buffer in order to parse')
+                # logger.debug('Not enough in buffer in order to parse')
+                pass
         return None
 
 
@@ -216,6 +217,8 @@ class PeerConnection:
 
     async def handle_message(self, buffer):
         async for message in PeerStreamIterator(self.reader, buffer):
+            if PeerState.Stopped.value in self.current_state:
+                break
             if isinstance(message, InterestedMessage):
                 logger.debug('Received interested message')
                 self.current_state.append(PeerState.Interested.value)
@@ -256,7 +259,6 @@ class PeerConnection:
                 logger.debug('Received request message')
                 # TODO: Implement cancel data
 
-            logger.debug('Checking status to request')
             if self.can_request():
                 if PeerState.PendingRequest.value not in self.current_state:
                     logger.info('Sending download request')
