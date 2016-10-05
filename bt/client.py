@@ -7,6 +7,7 @@ import os
 from collections import namedtuple
 from hashlib import sha1
 import asyncio
+import uvloop
 
 from .torrent_parser import parse
 from .logger import get_logger
@@ -14,10 +15,12 @@ from .tracker import HTTPTracker, UDPTracker
 from .protocol import PeerConnection
 from .message import REQUEST_SIZE
 from .mixins import ReprMixin
+from memory_profiler import profile
 
 
 logger = get_logger()
 
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 Peer = namedtuple('Peer', ['pending_blocks', 'missing_blocks',
                            'ongoing_pieces', 'bitfield'])
@@ -100,6 +103,7 @@ class DownloadManager:
         self.ongoing_pieces = []
         self.have_pieces = []
         self.missing_pieces = self.make_pieces()
+        self.max_pending_time = 3000 # Seconds
         self.fd = os.open(self.torrent.name,  os.O_RDWR | os.O_CREAT)
 
     @property
@@ -181,7 +185,7 @@ class DownloadManager:
                 if last_length % REQUEST_SIZE > 0:
                     last_block = blocks[-1]
                     last_block.length = last_length % REQUEST_SIZE
-                    block[-1] = last_block
+                    blocks[-1] = last_block
             pieces.append(Piece(index, blocks, hash_value))
         logger.debug('Completed calculating pieces')
         return pieces
@@ -207,7 +211,7 @@ class DownloadManager:
         for request in self.pending_blocks:
             if self.peers[peer_id][request.block.piece]:
                 if request.added + self.max_pending_time < current:
-                    logging.info('Re-requesting block {block} for '
+                    logger.info('Re-requesting block {block} for '
                                  'piece {piece}'.format(
                                     block=request.block.offset,
                                     piece=request.block.piece))
@@ -264,6 +268,7 @@ class Client:
             block_offset=block_offset,
             data=data)
 
+    @profile
     async def download(self, path):
         torrent = parse(path)
         torrent.print_all_info()
@@ -285,7 +290,7 @@ class Client:
                 available_peers=self.available_peers,
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
-                          for _ in range(7)]
+                          for _ in range(1)]
 
             await self.monitor()
 
