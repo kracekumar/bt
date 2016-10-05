@@ -48,7 +48,7 @@ class HTTPTracker(BaseTracker):
     async def announce(self):
         """
         """
-        logger.info('announce')
+        logger.debug('announce')
         params = self.build_params_for_announce()
         async with aiohttp.ClientSession() as session:
             async with session.get(self.url,
@@ -90,7 +90,7 @@ class HTTPTracker(BaseTracker):
         if not first:
             params.pop('event')
 
-        logger.info('Connecting tracker')
+        logger.debug('Connecting tracker')
 
         async with self.client.get(self.url, params=params) as response:
             if not response.status == 200:

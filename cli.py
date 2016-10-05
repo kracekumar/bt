@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import os
+import logging
 import sys
 import asyncio
 from concurrent.futures import CancelledError
@@ -8,7 +10,6 @@ import click
 import bencodepy
 
 from bt import Client, get_logger
-logger = get_logger()
 
 
 @click.group()
@@ -17,9 +18,13 @@ def cli():
 
 
 @click.command()
+@click.option('--loglevel', default='info',
+              help='info or debug. debug is enlightening')
 @click.argument('path')
-def download(path):
+def download(loglevel, path):
     try:
+        os.environ['loglevel'] = loglevel
+        logger = get_logger()
         loop = asyncio.get_event_loop()
         client = Client()
         task = loop.create_task(client.download(path))
@@ -27,9 +32,6 @@ def download(path):
             loop.run_until_complete(task)
         except CancelledError:
             logging.warning('Event was cancelled')
-        except Exception as e:
-            print(e)
-            raise(e)
         # finally:
         #     task.cancel()
         #     try:
@@ -39,7 +41,6 @@ def download(path):
         #     loop.close()
         # loop.run_forever()
         # loop.close()
-        # import ipdb;ipdb.set_trace()
         
     except (bencodepy.DecodingError,
             FileNotFoundError) as e:

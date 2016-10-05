@@ -91,7 +91,6 @@ def parse(path):
     """
     logger.info('Started parsing .torrent file')
     res = bencodepy.decode_from_file(path)
-    # import ipdb;ipdb.set_trace()
     return Torrent(announce=res[b'announce'],
                    announce_list=res.get(b'announce-list', []),
                    comment=res.get(b'comment', ''),

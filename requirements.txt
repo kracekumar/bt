@@ -4,3 +4,4 @@ bitstring==3.1.5
 click==6.6
 uvloop==0.5.3
 cython==0.24.1
+progress==1.2

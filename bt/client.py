@@ -7,7 +7,9 @@ import os
 from collections import namedtuple
 from hashlib import sha1
 import asyncio
+
 import uvloop
+from progress.bar import Bar
 
 from .torrent_parser import parse
 from .logger import get_logger
@@ -25,6 +27,9 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 Peer = namedtuple('Peer', ['pending_blocks', 'missing_blocks',
                            'ongoing_pieces', 'bitfield'])
 PendingRequest = namedtuple('PendingRequest', ['block', 'added'])
+
+# TODO: Accept this argument from user
+MAX_CONNECTIONS = 50
 
 
 class Block(ReprMixin):
@@ -65,7 +70,7 @@ class Piece(ReprMixin):
         matches = [b for b in self.blocks if b.offset == offset]
         block = matches[0] if matches else None
         if block:
-            logger.info('Block retrieved, offset {}'.format(offset))
+            logger.debug('Block retrieved, offset {}'.format(offset))
             block.status = Block.Retrieved
             block.data = data
         else:
@@ -74,7 +79,7 @@ class Piece(ReprMixin):
 
     def is_complete(self):
         blocks = [b for b in self.blocks if b.status is not Block.Retrieved]
-        logger.info('Pending pieces: {}'.format(len(blocks)))
+        logger.debug('Pending pieces: {}'.format(len(blocks)))
         return len(blocks) is 0
 
     def is_hash_matching(self):
@@ -94,7 +99,6 @@ class DownloadManager:
     """
     def __init__(self, torrent):
         self.torrent = torrent
-
         self.total_pieces = len(self.torrent.info.pieces)
         self.peers = {}
         # TODO: Come up with different data structure to store
@@ -104,11 +108,15 @@ class DownloadManager:
         self.have_pieces = []
         self.missing_pieces = self.make_pieces()
         self.max_pending_time = 3000 # Seconds
+        self.progress_bar = Bar('Downloading', max=self.total_pieces)
         self.fd = os.open(self.torrent.name,  os.O_RDWR | os.O_CREAT)
 
     @property
     def complete(self):
-        return len(self.have_pieces) == self.total_pieces
+        res = len(self.have_pieces) == self.total_pieces
+        if res is True:
+            self.progress_bar.finish()
+        return res
 
     @property
     def bytes_uploaded(self):
@@ -119,7 +127,7 @@ class DownloadManager:
         return len(self.have_pieces) * self.torrent.info.piece_length
 
     def on_block_complete(self, peer_id, piece_index, block_offset, data):
-        logger.info('Received block offset {block_offset}'
+        logger.debug('Received block offset {block_offset}'
                      ' for piece {piece_index} from peer {peer_id}'.format(
             block_offset=block_offset, piece_index=piece_index,
             peer_id=peer_id))
@@ -160,11 +168,8 @@ class DownloadManager:
             logger.debug("Piece doesn't exist to update")
 
     def update_have_piece(self, piece):
-        complete = (self.total_pieces - len(self.missing_pieces) -
-                    len(self.ongoing_pieces))
-        logger.info('{complete} / {total} pieces downloaded {per:.3f} %'.format(
-            complete=complete, total=self.total_pieces,
-            per=(complete/self.total_pieces)*100))
+        self.have_pieces.append(piece)
+        self.progress_bar.next()
 
     def make_pieces(self):
         total_pieces = len(self.torrent.info.pieces)
@@ -193,6 +198,10 @@ class DownloadManager:
     def add_peer(self, peer_id, bitfield):
         self.peers[peer_id] = bitfield
 
+    def update_peer(self, peer_id, index):
+        if peer_id in self.peers:
+            self.peers[peer_id][index] = 1
+
     def next_request(self, peer_id):
         if peer_id not in self.peers:
             return None
@@ -211,7 +220,7 @@ class DownloadManager:
         for request in self.pending_blocks:
             if self.peers[peer_id][request.block.piece]:
                 if request.added + self.max_pending_time < current:
-                    logger.info('Re-requesting block {block} for '
+                    logger.debug('Re-requesting block {block} for '
                                  'piece {piece}'.format(
                                     block=request.block.offset,
                                     piece=request.block.piece))
@@ -280,7 +289,7 @@ class Client:
             self.tracker = tracker
             resp = await tracker.announce()
             self.previous = time.time()
-            logger.info("Tracker Resp: {}".format(resp))
+            logger.debug("Tracker Resp: {}".format(resp))
             self.download_manager = DownloadManager(torrent)
             for peer in resp.peers:
                 self.available_peers.put_nowait(peer)
@@ -290,7 +299,7 @@ class Client:
                 available_peers=self.available_peers,
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
-                          for _ in range(1)]
+                          for _ in range(2)]
 
             await self.monitor()
 
@@ -316,7 +325,7 @@ class Client:
                     first=self.previous if self.previous else False,
                     uploaded=self.download_manager.bytes_uploaded,
                     downloaded=self.download_manager.bytes_downloaded)
-                logger.info('Tracker response: {}'.format(response))
+                logger.debug('Tracker response: {}'.format(response))
                 if response:
                     self.previous = current
                     interval = response.interval

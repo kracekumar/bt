@@ -60,8 +60,14 @@ class PeerStreamIterator:
     async def __anext__(self):
         # Read data from the socket. When we have enough data to parse, parse
         # it and return the message. Until then keep reading from stream
+        i = 0
         while True:
             try:
+                if i == 0 and self.buffer:
+                    i = 1
+                    return self.parse()
+                else:
+                    i = 1
                 data = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
                 if data:
                     self.buffer += data
@@ -124,49 +130,49 @@ class PeerStreamIterator:
 
                 if message_id is MessageID.BitField.value:
                     data = _data()
-                    logger.debug('Received BitField message')
+                    # logger.debug('Received BitField message')
                     _consume()
                     return BitFieldMessage.decode(data)
                 elif message_id is MessageID.Interested.value:
                     _consume()
-                    logger.debug('Received interested message')
+                    # logger.debug('Received interested message')
                     return InterestedMessage()
                 elif message_id is MessageID.NotInterested.value:
                     _consume()
-                    logger.debug('Received not interested message')
+                    # logger.debug('Received not interested message')
                     return NotInterestedMessage()
                 elif message_id is MessageID.Choke.value:
                     _consume()
-                    logger.debug('Received choke message')
+                    # logger.debug('Received choke message')
                     return ChokeMessage()
                 elif message_id is MessageID.Unchoke.value:
                     _consume()
-                    logger.debug('Received unchoke message')
+                    # logger.debug('Received unchoke message')
                     return UnchokeMessage()
                 elif message_id is MessageID.Have.value:
                     data = _data()
-                    logger.debug('Received have message')
+                    # logger.debug('Received have message')
                     _consume()
                     return HaveMessage.decode(data)
                 elif message_id is MessageID.Piece.value:
                     data = _data()
-                    logger.info('Received piece message')
+                    # logger.info('Received piece message')
                     _consume()
                     return PieceMessage.decode(data)
                 elif message_id is MessageID.Request.value:
                     data = _data()
-                    logger.debug('Received request message')
+                    # logger.debug('Received request message')
                     _consume()
                     return RequestMessage.decode(data)
                 elif message_id is MessageID.Cancel.value:
                     data = _data()
-                    logger.debug('Received cancel message')
+                    # logger.debug('Received cancel message')
                     _consume()
                     return CancelMessage.decode(data)
                 else:
                     logger.debug('Unsupported message!')
             else:
-                # logger.debug('Not enough in buffer in order to parse')
+                logger.debug('Not enough in buffer in order to parse')
                 pass
         return None
 
@@ -196,19 +202,23 @@ class PeerConnection:
                 self.peer = await self.available_peers.get()
                 self.reader, self.writer = await asyncio.open_connection(
                     self.peer[0], self.peer[1])
-                logger.info('Remote connection with peer {}:{}'.format(
+                logger.debug('Remote connection with peer {}:{}'.format(
                 *self.peer))
 
                 # Do handshake and react accordingly
                 buffer = await self.send_handshake()
 
-                logger.info('Adding client to choke state')
+                logger.debug('Adding client to choke state')
                 self.current_state.append(PeerState.Choked.value)
 
+                if buffer:
+                    # If the seeder sent extra details during the handshake
+                    # handle the data
+                    await self.handle_message(buffer)
                 # Then send interested message
-                buffer = await self.send_interested()
-
                 self.current_state.append(PeerState.Interested.value)
+
+                buffer = await self.send_interested()
 
                 # Parse the rest of the message and decide next step.
                 return await self.handle_message(buffer)
@@ -238,11 +248,14 @@ class PeerConnection:
                 except ValueError:
                     pass
             elif isinstance(message, HaveMessage):
-                # self.piece_manager.update_peer(self.remote_id,
-                #                                        message.index)
-                logger.info('Received have message')
+                self.download_manager.update_peer(self.remote_id,
+                                               message.index)
+                logger.debug('Received have message')
             elif isinstance(message, BitFieldMessage):
                 logger.info('Received bit field message: {}'.format(message))
+                if PeerState.Interested.value not in self.current_state:
+                    self.current_state.append(PeerState.Interested.value)
+                    buffer = await self.send_interested()
                 self.download_manager.add_peer(peer_id=self.remote_id,
                                                bitfield=message.bitfield)
             elif isinstance(message, PieceMessage):
@@ -253,15 +266,15 @@ class PeerConnection:
                                        block_offset=message.begin,
                                        data=message.block)
             elif isinstance(message, RequestMessage):
-                logger.debug('Received request message')
                 # TODO: Implement uploading data
+                pass
             elif isinstance(message, CancelMessage):
-                logger.debug('Received request message')
                 # TODO: Implement cancel data
-
+                pass
             if self.can_request():
                 if PeerState.PendingRequest.value not in self.current_state:
-                    logger.info('Sending download request')
+                    logger.debug('Sending download request {}'.format(
+                        self.peer))
                     self.current_state.append(PeerState.PendingRequest.value)
                     await self.send_request()
 
@@ -284,6 +297,7 @@ class PeerConnection:
             buf = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
 
         response = HandshakeMessage.decode(buf[:MessageLength.handshake.value])
+
         if not response:
             raise ProtocolError('Unable receive and parse a handshake. Received buffer: {}'.format(buf))
         if not response.info_hash == self.info_hash:
@@ -292,7 +306,8 @@ class PeerConnection:
         # TODO: According to spec we should validate that the peer_id received
         # from the peer match the peer_id received from the tracker.
         self.remote_id = response.peer_id
-        logger.info('Handshake with peer was successful')
+        logger.info('Handshake with peer was successful {}'.format(
+            self.peer))
 
         # We need to return the remaining buffer data, since we might have
         # read more bytes then the size of the handshake message and we need
@@ -309,12 +324,11 @@ class PeerConnection:
         """Request peer to transfer the pieces.
         """
         block = self.download_manager.next_request(self.remote_id)
-        logger.info("block: {}".format(block))
         if block:
             message = RequestMessage(block.piece, block.offset,
                                      block.length).encode()
 
-            logger.info('Requesting block {block} for {piece} of length '
+            logger.debug('Requesting block {block} for {piece} of length '
                          '{length} byte from peer {peer}'.format(
                              piece=block.piece, block=block.offset,
                              length=block.length, peer=self.remote_id))
@@ -327,7 +341,7 @@ class PeerConnection:
         if self.writer:
             self.writer.close()
 
-        self.available_peers.done()
+        self.available_peers.task_done()
 
     def stop(self):
         self.current_state.append(PeerState.Stopped)

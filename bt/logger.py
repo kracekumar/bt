@@ -1,14 +1,25 @@
 # -*- coding: utf-8 -*-
 
-
+import os
 import logging
 
 logger = None
+
+def get_loglevel():
+    loglevel = os.environ.get('loglevel', 'info')
+    if loglevel.lower() == 'info':
+        return logging.INFO
+    elif loglevel.lower() == 'debug':
+        return logging.DEBUG
+    # TODO: Warn user
+    return logging.INFO
 
 
 def get_logger():
     global logger
     if logger:
+        level = get_loglevel()
+        logger.setLevel(level)
         return logger
     logger = logging.getLogger()
     handler = logging.StreamHandler()
@@ -16,5 +27,6 @@ def get_logger():
         '%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+    level = get_loglevel()
+    logger.setLevel(level)
     return logger
