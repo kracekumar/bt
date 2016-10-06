@@ -22,9 +22,10 @@ class Info(namedtuple('Info', ['files', 'name',
     __slots__ = ()
 
     def __str__(self):
-        return "Info(files: {}, name: {}, piece_length: {})".format(
+        return "Info(files: {}, name: {}, piece_length: {}, pieces: {}...)".format(
             self.files, self.name,
-            self.piece_length)
+            self.piece_length,
+            self.pieces[:10])
 
 
 class Torrent:
