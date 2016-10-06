@@ -4,6 +4,7 @@ import os
 import logging
 import sys
 import asyncio
+import warnings
 from concurrent.futures import CancelledError
 
 import click
@@ -26,6 +27,9 @@ def download(loglevel, path):
         os.environ['loglevel'] = loglevel
         logger = get_logger()
         loop = asyncio.get_event_loop()
+        loop.set_debug(True)
+        loop.slow_callback_duration = 0.001
+        warnings.simplefilter('always', ResourceWarning)
         client = Client()
         task = loop.create_task(client.download(path))
         try:

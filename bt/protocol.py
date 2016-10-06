@@ -53,6 +53,7 @@ class PeerStreamIterator:
     def __init__(self, reader, initial=None):
         self.reader = reader
         self.buffer = initial if initial else b''
+        self.i = 0
 
     async def __aiter__(self):
         return self
@@ -60,14 +61,14 @@ class PeerStreamIterator:
     async def __anext__(self):
         # Read data from the socket. When we have enough data to parse, parse
         # it and return the message. Until then keep reading from stream
-        i = 0
         while True:
             try:
-                if i == 0 and self.buffer:
-                    i = 1
+                if self.i == 0 and self.buffer:
+                    self.i = 1
+                    #import ipdb;ipdb.set_trace()
                     return self.parse()
                 else:
-                    i = 1
+                    self.i = 1
                 data = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
                 if data:
                     self.buffer += data
@@ -173,7 +174,6 @@ class PeerStreamIterator:
                     logger.debug('Unsupported message!')
             else:
                 logger.debug('Not enough in buffer in order to parse')
-                pass
         return None
 
 

@@ -200,12 +200,16 @@ class PieceMessage(BasePeerMessage):
 
     @classmethod
     def decode(cls, data):
+        #import ipdb;ipdb.set_trace()
         logger.debug("Decoding PieceMessage of length: {}".format(len(data)))
         length = struct.unpack('>I', data[:4])[0]
-        parts = struct.unpack(
-            '>IbII' + str(length - 9) + 's',
-            data[:length+4])
-        return cls(parts[2], parts[3], parts[4])
+        try:
+            parts = struct.unpack(
+                '>IbII' + str(length - 9) + 's',
+                data[:length+4])
+            return cls(parts[2], parts[3], parts[4])
+        except struct.error:
+             return None
 
 
 class CancelMessage(BasePeerMessage):

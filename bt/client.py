@@ -107,7 +107,7 @@ class DownloadManager:
         self.ongoing_pieces = []
         self.have_pieces = []
         self.missing_pieces = self.make_pieces()
-        self.max_pending_time = 3000 # Seconds
+        self.max_pending_time = 300 * 1000 # Seconds
         self.progress_bar = Bar('Downloading', max=self.total_pieces)
         self.fd = os.open(self.torrent.name,  os.O_RDWR | os.O_CREAT)
 
@@ -299,7 +299,7 @@ class Client:
                 available_peers=self.available_peers,
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
-                          for _ in range(2)]
+                          for _ in range(7)]
 
             await self.monitor()
 
@@ -309,7 +309,7 @@ class Client:
 
     async def monitor(self):
         # Interval in seconds
-        interval = 5 * 60
+        interval = 15 * 60
 
         while True:
             if self.download_manager.complete:
