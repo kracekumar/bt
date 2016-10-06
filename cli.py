@@ -28,8 +28,8 @@ def download(loglevel, path):
         logger = get_logger()
         loop = asyncio.get_event_loop()
         loop.set_debug(True)
-        loop.slow_callback_duration = 0.001
-        warnings.simplefilter('always', ResourceWarning)
+        # loop.slow_callback_duration = 0.001
+        # warnings.simplefilter('always', ResourceWarning)
         client = Client()
         task = loop.create_task(client.download(path))
         try:
