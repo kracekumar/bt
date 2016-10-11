@@ -90,13 +90,13 @@ def upload(loglevel, path):
             logging.info('Received key board interrupt')
         finally:
             task.cancel()
+            server_task.cancel()
             try:
-                loop.run_until_complete(task)
+                logger.info('Smothly disconnecting')
+                client.close()
             except Exception:
                 pass
             loop.close()
-        loop.run_forever()
-        loop.close()
 
     except (bencodepy.DecodingError,
             FileNotFoundError) as e:

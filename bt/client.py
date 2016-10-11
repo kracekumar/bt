@@ -330,11 +330,8 @@ class Client:
                 first=False, uploaded=0,
                 downloaded=downloaded)
             logger.info(resp)
-            # Connect and bye use same client. So is this sleep :-)
-            await asyncio.sleep(0.01)
-            # resp = await tracker.bye(uploaded=0, downloaded=downloaded)
-            # logger.info(resp)
             tracker.close()
+            self.tracker = tracker
 
     async def monitor(self):
         # Interval in seconds
@@ -374,3 +371,7 @@ class Client:
         [peer.stop() for peer in self.peers]
         self.download_manager.close()
         self.tracker.close()
+
+    def close(self):
+        # TODO: Fix uploaded
+        self.tracker.bye(uploaded=0, downloaded=downloaded)

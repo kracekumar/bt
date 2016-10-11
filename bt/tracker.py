@@ -6,6 +6,7 @@ from struct import unpack
 
 import bencodepy
 import aiohttp
+import requests
 
 from .utils import generate_peer_id
 from .logger import get_logger
@@ -57,11 +58,12 @@ class HTTPTracker(BaseTracker):
                     content = await resp.read()
                     return self.parse_tracker_response(content)
 
-    async def bye(self, uploaded, downloaded):
+    def bye(self, uploaded, downloaded):
+        params = self.build_params_for_announce(
+            first=False, uploaded=0, downloaded=0, event='stopped')
         logger.info('Saying bye to tracker')
-        return await self.connect(first=False, uploaded=uploaded,
-                                  downloaded=downloaded,
-                                  event='stopped')
+        res = requests.get(self.url, params=params)
+        logger.info('{}'.format(res))
 
     def parse_tracker_response(self, content):
         resp = bencodepy.decode(content)
@@ -107,6 +109,7 @@ class HTTPTracker(BaseTracker):
                     await response.read()))
             data = await response.read()
             return self.parse_tracker_response(data)
+
 
 def _decode_port(port):
     return unpack(">H", port)[0]
