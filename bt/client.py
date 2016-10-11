@@ -17,7 +17,7 @@ from .tracker import HTTPTracker, UDPTracker
 from .protocol import PeerConnection
 from .message import REQUEST_SIZE
 from .mixins import ReprMixin
-from memory_profiler import profile
+from .server import run_server
 
 
 logger = get_logger()
@@ -84,7 +84,9 @@ class Piece(ReprMixin):
 
     def is_hash_matching(self):
         piece_hash = bytearray(sha1(self.data).hexdigest(), 'utf-8')
-        return self.hash == piece_hash
+        if isinstance(self.hash, bytes):
+            res = bytearray(self.hash) == piece_hash
+        return res
 
     @property
     def data(self):
@@ -97,7 +99,7 @@ class DownloadManager:
     """Manager keeps track of all the pieces, connections, 
     state of the download and all the other info.
     """
-    def __init__(self, torrent):
+    def __init__(self, torrent, savedir):
         self.torrent = torrent
         self.total_pieces = len(self.torrent.info.pieces)
         self.peers = {}
@@ -107,9 +109,13 @@ class DownloadManager:
         self.ongoing_pieces = []
         self.have_pieces = []
         self.missing_pieces = self.make_pieces()
-        self.max_pending_time = 3000 # Seconds
+        self.max_pending_time = 300 * 1000 # Seconds
         self.progress_bar = Bar('Downloading', max=self.total_pieces)
-        self.fd = os.open(self.torrent.name,  os.O_RDWR | os.O_CREAT)
+        if savedir == '.':
+            name = self.torrent.name
+        else:
+            name = os.path.join(savedir, self.torrent.name)
+        self.fd = os.open(name, os.O_RDWR | os.O_CREAT)
 
     @property
     def complete(self):
@@ -277,8 +283,7 @@ class Client:
             block_offset=block_offset,
             data=data)
 
-    @profile
-    async def download(self, path):
+    async def download(self, path, savedir):
         torrent = parse(path)
         torrent.print_all_info()
 
@@ -290,7 +295,7 @@ class Client:
             resp = await tracker.announce()
             self.previous = time.time()
             logger.debug("Tracker Resp: {}".format(resp))
-            self.download_manager = DownloadManager(torrent)
+            self.download_manager = DownloadManager(torrent, savedir)
             for peer in resp.peers:
                 self.available_peers.put_nowait(peer)
             self.peers = [PeerConnection(
@@ -307,9 +312,30 @@ class Client:
             logger.info("UDP tracker isn't supported")
             exit(1)
 
+    def get_filesize(self, name):
+        return os.path.getsize(name)
+
+    def parse(self, path):
+        torrent = parse(path)
+        self.torrent = torrent
+
+    async def upload(self):
+        torrent = self.torrent
+        if torrent.announce.startswith(b'http'):
+            tracker = HTTPTracker(url=torrent.announce,
+                                  size=torrent.info.length,
+                                  info_hash=torrent.hash)
+            downloaded = self.get_filesize(torrent.name)
+            resp = await tracker.connect(
+                first=False, uploaded=0,
+                downloaded=downloaded)
+            logger.info(resp)
+            tracker.close()
+            self.tracker = tracker
+
     async def monitor(self):
         # Interval in seconds
-        interval = 5 * 60
+        interval = 15 * 60
 
         while True:
             if self.download_manager.complete:
@@ -345,3 +371,7 @@ class Client:
         [peer.stop() for peer in self.peers]
         self.download_manager.close()
         self.tracker.close()
+
+    def close(self):
+        # TODO: Fix uploaded
+        self.tracker.bye(uploaded=0, downloaded=downloaded)

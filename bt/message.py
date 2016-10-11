@@ -37,7 +37,7 @@ class BasePeerMessage:
         raise NotImplementedError
 
 
-class HandshakeMessage(BasePeerMessage):
+class HandshakeMessage(BasePeerMessage, ReprMixin):
     """
     Format:
         <pstrlen><pstr><reserved><info_hash><peer_id>
@@ -47,6 +47,8 @@ class HandshakeMessage(BasePeerMessage):
     Thus length is:
         49 + len(pstr) = 68 bytes long.
     """
+    __repr_fields__ = ['info_hash', 'peer_id']
+
     def __init__(self, info_hash, peer_id):
         self.info_hash = info_hash
         self.peer_id = peer_id
@@ -92,15 +94,18 @@ class BitFieldMessage(BasePeerMessage, ReprMixin):
     """
     __repr_fields__ = ['bitfield']
 
-    def __init__(self, data):
-        self.bitfield = bitstring.BitArray(bytes=data)
+    def __init__(self, data=None, val=None):
+        if val:
+            self.bitfield = bitstring.BitArray(val)
+        else:
+            self.bitfield = bitstring.BitArray(bytes=data)
 
     def encode(self):
         bit_length = len(self.bitfield)
         return struct.pack('>Ib'+ str(bit_length) + 's',
                            1 + bit_length,
                            MessageID.BitField.value,
-                           self.bitfield)
+                           self.bitfield.bytes)
 
     @classmethod
     def decode(cls, data):
@@ -130,12 +135,14 @@ class UnchokeMessage(BasePeerMessage):
     """
 
 
-class HaveMessage(BasePeerMessage):
+class HaveMessage(BasePeerMessage, ReprMixin):
     """
     Format: <len=0005><id=4><pieceindex>
 
     Message represents client successfully downloaded a piece.
     """
+    __repr_fields__ = ['index']
+
     def __init__(self, index):
         self.index = index
 
@@ -150,13 +157,15 @@ class HaveMessage(BasePeerMessage):
         return cls(index=parts[-1])
 
 
-class RequestMessage(BasePeerMessage):
+class RequestMessage(BasePeerMessage, ReprMixin):
     """This message is used to request partial data from remote peer.
     
     Format: <len=0013><id=6><index><begin><length>
     
     All the requested pieces is of equal size except last one. Last piece will be smaller than rest of the request size.
     """
+    __repr_fields__ = ['index', 'begin', 'length']
+
     def __init__(self, index, begin, length=REQUEST_SIZE):
         self.index = index
         self.begin = begin
@@ -178,12 +187,14 @@ class RequestMessage(BasePeerMessage):
         return cls(parts[2], parts[3], parts[4])
 
 
-class PieceMessage(BasePeerMessage):
+class PieceMessage(BasePeerMessage, ReprMixin):
     """This is the message which carries actual data :D
 
     Format: <len=0009+X><id=7><index><begin><block>
     X: length of the block
     """
+    __repr_fields__ = ['index', 'begin', 'block']
+
     def __init__(self, index, begin, block):
         self.index = index
         self.begin = begin
@@ -202,16 +213,21 @@ class PieceMessage(BasePeerMessage):
     def decode(cls, data):
         logger.debug("Decoding PieceMessage of length: {}".format(len(data)))
         length = struct.unpack('>I', data[:4])[0]
-        parts = struct.unpack(
-            '>IbII' + str(length - 9) + 's',
-            data[:length+4])
-        return cls(parts[2], parts[3], parts[4])
+        try:
+            parts = struct.unpack(
+                '>IbII' + str(length - 9) + 's',
+                data[:length+4])
+            return cls(parts[2], parts[3], parts[4])
+        except struct.error:
+             return None
 
 
-class CancelMessage(BasePeerMessage):
+class CancelMessage(BasePeerMessage, ReprMixin):
     """
     Format: <len=0013><id=8><index><begin><length>
     """
+    __repr_fields__ = ['index', 'begin', 'block']
+
     def __init__(self, index, begin, block):
         self.index = index
         self.begin = begin

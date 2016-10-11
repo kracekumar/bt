@@ -55,7 +55,6 @@ class Torrent:
     def hash(self):
         m = hashlib.sha1()
         m.update(bencodepy.encode(self.raw_info))
-        logger.info(m.digest())
         return m.digest()
 
     def print_all_info(self):

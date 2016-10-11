@@ -6,6 +6,7 @@ from struct import unpack
 
 import bencodepy
 import aiohttp
+import requests
 
 from .utils import generate_peer_id
 from .logger import get_logger
@@ -57,6 +58,13 @@ class HTTPTracker(BaseTracker):
                     content = await resp.read()
                     return self.parse_tracker_response(content)
 
+    def bye(self, uploaded, downloaded):
+        params = self.build_params_for_announce(
+            first=False, uploaded=0, downloaded=0, event='stopped')
+        logger.info('Saying bye to tracker')
+        res = requests.get(self.url, params=params)
+        logger.info('{}'.format(res))
+
     def parse_tracker_response(self, content):
         resp = bencodepy.decode(content)
         split_peers = [resp[b'peers'][i:i+6]
@@ -71,7 +79,7 @@ class HTTPTracker(BaseTracker):
     def build_params_for_announce(self):
          return {'info_hash': self.info_hash,
                 'peer_id': self.peer_id,
-                'port': '51413',
+                'port': '51412',
                 'uploaded': 0,
                 'downloaded': 0,
                 'left': self.size,
@@ -81,7 +89,7 @@ class HTTPTracker(BaseTracker):
                 'supportcrypto': 1,
                 'event': 'started'}
 
-    async def connect(self, first, uploaded, downloaded):
+    async def connect(self, first, uploaded, downloaded, event=''):
         params = self.build_params_for_announce()
         params['uploaded'] = uploaded
         params['downloaded'] = downloaded
@@ -89,6 +97,9 @@ class HTTPTracker(BaseTracker):
 
         if not first:
             params.pop('event')
+
+        if event != '':
+            params['event'] = event
 
         logger.debug('Connecting tracker')
 
@@ -98,6 +109,7 @@ class HTTPTracker(BaseTracker):
                     await response.read()))
             data = await response.read()
             return self.parse_tracker_response(data)
+
 
 def _decode_port(port):
     return unpack(">H", port)[0]
