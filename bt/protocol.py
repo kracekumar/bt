@@ -187,8 +187,19 @@ class PeerConnection:
             try:
                 self.peer = await self.available_peers.get()
                 logger.info('got peer {}'.format(self.peer))
-                self.reader, self.writer = await asyncio.open_connection(
+                fut = asyncio.open_connection(
                     self.peer[0], self.peer[1])
+                try:
+                    self.reader, self.writer = await asyncio.wait_for(
+                        fut, timeout=3)
+                except asyncio.TimeoutError:
+                    logger.info("Remote peer {} didn't respond".format(
+                        self.peer))
+                    continue
+                except ConnectionRefusedError:
+                    logger.info('Connection refused {}'.format(self.peer))
+                    continue
+
                 logger.debug('Remote connection with peer {}:{}'.format(
                 *self.peer))
 

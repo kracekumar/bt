@@ -52,9 +52,6 @@ def download(loglevel, savedir, path):
             except Exception:
                 pass 
             loop.close()
-        loop.run_forever()
-        loop.close()
-        
     except (bencodepy.DecodingError,
             FileNotFoundError) as e:
         logger.error(e)
