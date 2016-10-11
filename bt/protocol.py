@@ -67,7 +67,7 @@ class PeerStreamIterator:
                     message = self.parse()
                     if message:
                         return message
-                logger.debug('I m stuck')
+                logger.debug('I m stuck at reading from socket')
                 data = await self.reader.read(
                     PeerStreamIterator.CHUNK_SIZE)
                 if data:
@@ -75,19 +75,6 @@ class PeerStreamIterator:
                     message = self.parse()
                     if message:
                         return message
-                # data = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
-                # if data:
-                #     self.buffer += data
-                #     message = self.parse()
-                #     if message:
-                #         return message
-                # else:
-                #     logging.debug('No data read from stream')
-                #     if self.buffer:
-                #         message = self.parse()
-                #         if message:
-                #             return message
-                #     raise StopAsyncIteration()
             except ConnectionResetError:
                 logging.debug('Connection closed by peer')
                 raise StopAsyncIteration()
@@ -170,7 +157,6 @@ class PeerStreamIterator:
                 else:
                     logger.debug('Unsupported message!')
             else:
-                #import ipdb;ipdb.set_trace()
                 return None
                 logger.debug('Not enough in buffer in order to parse')
         return None
@@ -197,7 +183,6 @@ class PeerConnection:
         self.future = asyncio.ensure_future(self.start())
 
     async def start(self):
-        logger.debug('inside')
         while PeerState.Stopped.value not in self.current_state:
             try:
                 self.peer = await self.available_peers.get()
@@ -293,7 +278,6 @@ class PeerConnection:
         Send the initial handshake to the remote peer and wait for the peer
         to respond with its handshake.
         """
-        logger.info(HandshakeMessage(self.info_hash, self.peer_id).encode())
         self.writer.write(
             HandshakeMessage(self.info_hash, self.peer_id).encode())
         await self.writer.drain()
@@ -323,10 +307,7 @@ class PeerConnection:
             self.current_state.remove(PeerState.Choked.value)
         except ValueError as e:
             pass
-        # try:
-        #     self.current_state.remove(PeerState.Unchoke.value)
-        # except ValueError:
-        #     logger.info('Value Error')
+
         return buf[MessageLength.handshake.value:]
 
     async def send_interested(self):

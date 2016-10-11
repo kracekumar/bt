@@ -211,7 +211,6 @@ class PieceMessage(BasePeerMessage, ReprMixin):
 
     @classmethod
     def decode(cls, data):
-        #import ipdb;ipdb.set_trace()
         logger.debug("Decoding PieceMessage of length: {}".format(len(data)))
         length = struct.unpack('>I', data[:4])[0]
         try:
