@@ -1,0 +1,6 @@
+language: python
+python:
+  - "3.5"
+
+install: "pip install -r test_requirements.txt"
+script: pytest -s --cov=bt/ tests/
