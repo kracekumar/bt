@@ -186,6 +186,10 @@ class PeerConnection:
         while PeerState.Stopped.value not in self.current_state:
             try:
                 self.peer = await self.available_peers.get()
+
+                if self.peer[1] < 80:
+                    # Who runs torrent client on these ports? Rogue clients
+                    continue
                 logger.info('got peer {}'.format(self.peer))
                 fut = asyncio.open_connection(
                     self.peer[0], self.peer[1])

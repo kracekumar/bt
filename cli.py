@@ -13,6 +13,24 @@ import bencodepy
 from bt import Client, get_logger, run_server
 
 
+def manage_event_loop_for_download(path, savedir):
+    loop = asyncio.get_event_loop()
+    loop.set_debug(True)
+    client = Client()
+    task = loop.create_task(client.download(path, savedir))
+    try:
+        loop.run_until_complete(task)
+    except CancelledError:
+        logging.warning('Event was cancelled')
+    finally:
+        task.cancel()
+        try:
+            loop.run_until_complete(task)
+        except Exception:
+            pass 
+        loop.close()
+
+
 @click.group()
 def cli():
     pass
@@ -37,21 +55,7 @@ def download(loglevel, savedir, path):
             logger.info("Directory {} doesn't exist".format(savedir))
             exit(1)
 
-        loop = asyncio.get_event_loop()
-        loop.set_debug(True)
-        client = Client()
-        task = loop.create_task(client.download(path, savedir))
-        try:
-            loop.run_until_complete(task)
-        except CancelledError:
-            logging.warning('Event was cancelled')
-        finally:
-            task.cancel()
-            try:
-                loop.run_until_complete(task)
-            except Exception:
-                pass 
-            loop.close()
+        manage_event_loop_for_download(path, savedir)
     except (bencodepy.DecodingError,
             FileNotFoundError) as e:
         logger.error(e)

@@ -296,8 +296,10 @@ class Client:
             self.previous = time.time()
             logger.debug("Tracker Resp: {}".format(resp))
             self.download_manager = DownloadManager(torrent, savedir)
-            for peer in resp.peers:
+            for peer in [('127.0.0.1', 51213)]:
                 self.available_peers.put_nowait(peer)
+            # for peer in resp.peers:
+            #     self.available_peers.put_nowait(peer)
             self.peers = [PeerConnection(
                 info_hash=torrent.hash,
                 peer_id=tracker.peer_id,
@@ -309,8 +311,23 @@ class Client:
             await self.monitor()
 
         elif torrent.announce.startswith(b'udp'):
-            logger.info("UDP tracker isn't supported")
-            exit(1)
+            tracker = UDPTracker(url=torrent.announce,
+                                 info_hash=torrent.hash)
+            peers = tracker.announce()
+            self.download_manager = DownloadManager(torrent, savedir)
+
+            for peer in peers:
+                self.available_peers.put_nowait(peer)
+
+            self.peers = [PeerConnection(
+                info_hash=torrent.hash,
+                peer_id=tracker.peer_id,
+                available_peers=self.available_peers,
+                download_manager=self.download_manager,
+                on_block_complete=self.on_block_complete)
+                          for _ in range(2)]
+
+            await asyncio.sleep(0.1)
 
     def get_filesize(self, name):
         return os.path.getsize(name)
