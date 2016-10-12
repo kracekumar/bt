@@ -119,7 +119,7 @@ class UDPTracker(BaseTracker):
     def announce(self):
         logger.info('Connecting to host: {}'.format(
             self.host))
-        # TODO: Use asyncio kid
+        # TODO: Use asyncio kid!
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             while True:
@@ -127,7 +127,6 @@ class UDPTracker(BaseTracker):
                     msg = pack(UDP_CONN_INPUT_FORMAT, UDP_CONN_ID,
                                Actions.connect.value, self.transaction_id)
                     sock.sendto(msg, self.host)
-                    #import ipdb;ipdb.set_trace()
                     recv = sock.recv(1024)
                     logger.info("recv: {}".format(recv))
                     action, transaction_id, conn_id = unpack(
@@ -170,7 +169,6 @@ class UDPTracker(BaseTracker):
         peers = (peers_raw[i:i+6] for i in range(0, len(peers_raw), 6))
         hosts_ports = [(socket.inet_ntoa(peer[0:4]),
                         unpack('>H', peer[4:6])[0]) for peer in peers]
-        logger.info("Hosts: {}".format(hosts_ports))
         return hosts_ports
 
 
@@ -187,7 +185,6 @@ class HTTPTracker(BaseTracker):
         """
         logger.debug('announce')
         params = self.build_params_for_announce()
-        import ipdb;ipdb.set_trace()
         async with aiohttp.ClientSession() as session:
             async with session.get(self.url,
                                    params=params) as resp:
@@ -204,7 +201,7 @@ class HTTPTracker(BaseTracker):
 
 
     def build_params_for_announce(self):
-         return {'info_has': self.info_hash,
+         return {'info_hash': self.info_hash,
                 'peer_id': self.peer_id,
                 'port': '51412',
                 'uploaded': 0,
