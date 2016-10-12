@@ -22,7 +22,7 @@ from .server import run_server
 
 logger = get_logger()
 
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+# asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 Peer = namedtuple('Peer', ['pending_blocks', 'missing_blocks',
                            'ongoing_pieces', 'bitfield'])
@@ -326,8 +326,6 @@ class Client:
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
                           for _ in range(2)]
-
-            await asyncio.sleep(0.1)
 
     def get_filesize(self, name):
         return os.path.getsize(name)

@@ -195,7 +195,7 @@ class PeerConnection:
                     self.peer[0], self.peer[1])
                 try:
                     self.reader, self.writer = await asyncio.wait_for(
-                        fut, timeout=3)
+                        fut, timeout=5)
                 except asyncio.TimeoutError:
                     logger.info("Remote peer {} didn't respond".format(
                         self.peer))
