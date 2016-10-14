@@ -14,7 +14,7 @@ from progress.bar import Bar
 from .torrent_parser import parse
 from .logger import get_logger
 from .tracker import HTTPTracker, UDPTracker
-from .protocol import PeerConnection
+from .protocol import PeerConnection, UDPConnection
 from .message import REQUEST_SIZE
 from .mixins import ReprMixin
 from .server import run_server
@@ -296,17 +296,17 @@ class Client:
             self.previous = time.time()
             logger.debug("Tracker Resp: {}".format(resp))
             self.download_manager = DownloadManager(torrent, savedir)
-            for peer in [('127.0.0.1', 51213)]:
-                self.available_peers.put_nowait(peer)
-            # for peer in resp.peers:
+            # for peer in [('127.0.0.1', 51213)]:
             #     self.available_peers.put_nowait(peer)
+            for peer in resp.peers:
+                self.available_peers.put_nowait(peer)
             self.peers = [PeerConnection(
                 info_hash=torrent.hash,
                 peer_id=tracker.peer_id,
                 available_peers=self.available_peers,
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
-                          for _ in range(2)]
+                          for _ in range(20)]
 
             await self.monitor()
 
@@ -319,13 +319,27 @@ class Client:
             for peer in peers:
                 self.available_peers.put_nowait(peer)
 
-            self.peers = [PeerConnection(
+            self.peers = [UDPConnection(
                 info_hash=torrent.hash,
                 peer_id=tracker.peer_id,
                 available_peers=self.available_peers,
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
                           for _ in range(2)]
+
+            await self.udp_monitor()
+
+    async def udp_monitor(self):
+        while True:
+            if self.download_manager.complete:
+                logger.info('Download complete, exiting...')
+                break
+            elif self.abort:
+                logger.info('Aborting download...')
+                break
+
+            await asyncio.sleep(0)
+        self.stop()
 
     def get_filesize(self, name):
         return os.path.getsize(name)

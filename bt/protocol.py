@@ -4,6 +4,7 @@ from enum import Enum
 
 import struct
 import asyncio
+import socket
 
 from concurrent.futures import CancelledError
 
@@ -78,7 +79,7 @@ class PeerStreamIterator:
             except ConnectionResetError:
                 logging.debug('Connection closed by peer')
                 raise StopAsyncIteration()
-            except CancelledError:
+            except (CancelledError, EOFError) as e:
                 raise StopAsyncIteration()
             except StopAsyncIteration as e:
                 # Cath to stop logging
@@ -162,7 +163,7 @@ class PeerStreamIterator:
         return None
 
 
-class PeerConnection:
+class BaseConnection:
     def __init__(self, info_hash, peer_id, available_peers, download_manager,
                  on_block_complete):
         """
@@ -181,44 +182,6 @@ class PeerConnection:
 
         self.is_interested_msg_sent = False
         self.future = asyncio.ensure_future(self.start())
-
-    async def start(self):
-        while PeerState.Stopped.value not in self.current_state:
-            try:
-                self.peer = await self.available_peers.get()
-
-                if self.peer[1] < 80:
-                    # Who runs torrent client on these ports? Rogue clients
-                    continue
-                logger.info('got peer {}'.format(self.peer))
-                fut = asyncio.open_connection(
-                    self.peer[0], self.peer[1])
-                try:
-                    self.reader, self.writer = await asyncio.wait_for(
-                        fut, timeout=5)
-                except asyncio.TimeoutError:
-                    logger.info("Remote peer {} didn't respond".format(
-                        self.peer))
-                    continue
-                except ConnectionRefusedError:
-                    logger.info('Connection refused {}'.format(self.peer))
-                    continue
-
-                logger.debug('Remote connection with peer {}:{}'.format(
-                *self.peer))
-
-                logger.debug('Adding client to choke state')
-                self.current_state.append(PeerState.Choked.value)
-
-                # Do handshake and react accordingly
-                buffer = await self.send_handshake()
-                logger.debug('start')
-                # buffer = await self.send_interested()
-
-                # Parse the rest of the message and decide next step.
-                return await self.handle_message(buffer)
-            except (asyncio.TimeoutError, ProtocolError) as e:
-                logger.debug(e)
 
     async def handle_message(self, buffer):
         if not buffer:
@@ -262,12 +225,6 @@ class PeerConnection:
                                        piece_index=message.index,
                                        block_offset=message.begin,
                                        data=message.block)
-            elif isinstance(message, RequestMessage):
-                # TODO: Implement uploading data
-                pass
-            elif isinstance(message, CancelMessage):
-                # TODO: Implement cancel data
-                pass
 
             await self.send_next_message()
         self.cancel()
@@ -359,3 +316,110 @@ class PeerConnection:
         self.current_state.append(PeerState.Stopped)
         if not self.future.done():
             self.future.cancel()
+
+
+class UDPConnection(BaseConnection):
+    async def start(self):
+        await asyncio.sleep(0)
+        while PeerState.Stopped.value not in self.current_state:
+            self.peer = await self.available_peers.get()
+
+            if self.peer[1] < 80:
+                # Who runs torrent client on these ports? Rogue clients
+                continue
+            logger.info('got peer {}'.format(self.peer))
+            self.sock_handler(self.peer)
+            await asyncio.sleep(0)
+
+    def sock_handler(self, addr):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            while True:
+                msg = HandshakeMessage(self.info_hash, self.peer_id).encode()
+                sock.sendto(msg, addr)
+                recv = sock.recv(1024)
+                logger.info("recv: {}".format(recv))
+                import ipdb;ipdb.set_trace()
+                logger.info("Decode: {}".format(HandshakeMessage.decode(recv)))
+                # if self.state == Actions.connect.value:
+                #     msg = pack(UDP_CONN_INPUT_FORMAT, UDP_CONN_ID,
+                #                Actions.connect.value, self.transaction_id)
+                #     sock.sendto(msg, addr)
+                #     recv = sock.recv(1024)
+                #     logger.info("recv: {}".format(recv))
+                #     action, transaction_id, conn_id = unpack(
+                #         UDP_CONN_OUTPUT_FORMAT, recv)
+
+                #     assert action == Actions.connect.value
+                #     assert transaction_id == self.transaction_id
+
+                #     self.connection_id = conn_id
+                #     self.state = Actions.announce.value
+                # elif self.state == Actions.announce.value:
+                #     # TODO: Manage downloaded. left, uploaded
+                #     msg = pack(UDP_ANNOUNCE_INPUT_FORMAT, self.connection_id,
+                #          self.state, self.transaction_id, self.info_hash,
+                #          self.client_id, 0, 0, 0, Events.started.value, 0,
+                #          self.key, -1, 51413)
+                #     sock.sendto(msg, self.host)
+                #     recv = sock.recv(1024)
+                #     logger.debug("Announce resp: {}".format(recv))
+
+                #     assert len(recv) >= 20
+
+                #     action, trans_id = unpack(UDP_ANNOUNCE_OUTPUT_FORMAT,
+                #                               recv[:8])
+
+                #     peers = recv[8:]
+                #     logger.debug("Peers: {}".format(peers))
+                #     self.state = Actions.scrape.value
+
+                #     return self.parse_peers(peers)
+                # else:
+                #     break
+        except socket.error as e:
+            logger.error(e)
+
+    
+class PeerConnection(BaseConnection):
+    async def start(self):
+        while PeerState.Stopped.value not in self.current_state:
+            try:
+                self.peer = await self.available_peers.get()
+
+                if self.peer[1] < 80:
+                    # Who runs torrent client on these ports? Rogue clients
+                    continue
+                logger.info('got peer {}'.format(self.peer))
+                try:
+                    fut = asyncio.open_connection(self.peer[0], self.peer[1])
+                    self.reader, self.writer = await asyncio.wait_for(fut,
+                        timeout=5)
+                except CancelledError:
+                    logger.info("Remote peer {} didn't respond".format(
+                        self.peer))
+                    continue
+                except ConnectionRefusedError:
+                    logger.info('Connection refused {}'.format(self.peer))
+                    await asyncio.sleep(0.1)
+                    continue
+                except OSError as e:
+                    await asyncio.sleep(0.1)
+                    logger.error(e)
+                    continue
+
+                logger.debug('Remote connection with peer {}:{}'.format(
+                *self.peer))
+
+                logger.debug('Adding client to choke state')
+                self.current_state.append(PeerState.Choked.value)
+
+                # Do handshake and react accordingly
+                buffer = await self.send_handshake()
+                logger.debug('start')
+                # buffer = await self.send_interested()
+
+                # Parse the rest of the message and decide next step.
+                return await self.handle_message(buffer)
+            except (asyncio.TimeoutError, ProtocolError) as e:
+                logger.debug(e)

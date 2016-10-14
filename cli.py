@@ -17,17 +17,18 @@ def manage_event_loop_for_download(path, savedir):
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
     client = Client()
-    task = loop.create_task(client.download(path, savedir))
     try:
-        loop.run_until_complete(task)
-    except CancelledError:
+        loop.run_until_complete(client.download(path, savedir))
+    except asyncio.CancelledError as e:
+        import ipdb;ipdb.set_trace()
         logging.warning('Event was cancelled')
     finally:
-        task.cancel()
-        try:
-            loop.run_until_complete(task)
-        except Exception:
-            pass 
+        # import ipdb;ipdb.set_trace()
+        # task.cancel()
+        # try:
+        #     loop.run_until_complete(task)
+        # except Exception:
+        #     pass 
         loop.close()
 
 
