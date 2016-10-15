@@ -68,24 +68,26 @@ class PeerStreamIterator:
                     message = self.parse()
                     if message:
                         return message
-                logger.debug('I m stuck at reading from socket')
-                data = await self.reader.read(
-                    PeerStreamIterator.CHUNK_SIZE)
+                logger.debug('I m stuck at reading from socket, buffer length: {}'.format(
+                    len(self.buffer)))
+                data = await asyncio.wait_for(self.reader.read(
+                    PeerStreamIterator.CHUNK_SIZE), timeout=5)
                 if data:
                     self.buffer += data
                     message = self.parse()
                     if message:
                         return message
             except ConnectionResetError:
-                logging.debug('Connection closed by peer')
+                logger.debug('Connection closed by peer')
                 raise StopAsyncIteration()
-            except (CancelledError, EOFError) as e:
+            except (CancelledError, EOFError, TimeoutError) as e:
+                logger.error(e)
                 raise StopAsyncIteration()
             except StopAsyncIteration as e:
                 # Cath to stop logging
                 raise e
             except Exception:
-                logging.exception('Error when iterating over stream!')
+                logger.exception('Error when iterating over stream!')
                 raise StopAsyncIteration()
         raise StopAsyncIteration()
 
@@ -256,7 +258,11 @@ class BaseConnection:
 
         buf = b''
         while len(buf) < MessageLength.handshake.value:
-            buf = await self.reader.read(PeerStreamIterator.CHUNK_SIZE)
+            try:
+                buf = await asyncio.wait_for(
+                    self.reader.read(PeerStreamIterator.CHUNK_SIZE), timeout=5)
+            except ConnectionResetError as e:
+                logger.error(e)
 
         response = HandshakeMessage.decode(buf[:MessageLength.handshake.value])
 
@@ -385,7 +391,7 @@ class PeerConnection(BaseConnection):
     async def start(self):
         while PeerState.Stopped.value not in self.current_state:
             try:
-                self.peer = await self.available_peers.get()
+                self.peer = self.available_peers.get_nowait()
 
                 if self.peer[1] < 80:
                     # Who runs torrent client on these ports? Rogue clients
@@ -407,6 +413,9 @@ class PeerConnection(BaseConnection):
                     await asyncio.sleep(0.1)
                     logger.error(e)
                     continue
+                except KeyboardInterrupt as e:
+                    logger.error(e)
+                    break
 
                 logger.debug('Remote connection with peer {}:{}'.format(
                 *self.peer))
