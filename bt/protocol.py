@@ -398,8 +398,9 @@ class PeerConnection(BaseConnection):
                 try:
                     self.peer = self.available_peers.get_nowait()
                 except asyncio.queues.QueueEmpty as e:
-                    await asyncio.sleep(1)
-
+                    await asyncio.sleep(5)
+                    continue
+                    #exit(1)
                 if self.peer[1] < 80:
                     # Who runs torrent client on these ports? Rogue clients
                     continue
@@ -414,10 +415,10 @@ class PeerConnection(BaseConnection):
                     continue
                 except ConnectionRefusedError:
                     logger.info('Connection refused {}'.format(self.peer))
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(1)
                     continue
                 except (OSError, KeyboardInterrupt, asyncio.TimeoutError) as e:
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(1)
                     logger.error(e)
                     continue
 

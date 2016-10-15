@@ -62,7 +62,7 @@ class BaseTracker:
 
         peers = [(socket.inet_ntoa(p[:4]), _decode_port(p[4:]))
                 for p in split_peers]
-        return TrackerResponse(resp[b'complete'], resp.get(b'crypto_flags'),
+        return TrackerResponse(resp.get(b'complete'), resp.get(b'crypto_flags'),
                                resp.get(b'incomplete'), resp.get(b'interval'),
                                peers)
 

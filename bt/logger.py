@@ -14,6 +14,15 @@ def get_loglevel():
     # TODO: Warn user
     return logging.INFO
 
+class Logger:
+    def info(self, *args, **kwargs):
+        pass
+
+    def error(self, *args, **kwargs):
+        pass
+
+    def debug(self, *args, **kwargs):
+        pass
 
 def get_logger():
     global logger
@@ -30,3 +39,4 @@ def get_logger():
     level = get_loglevel()
     logger.setLevel(level)
     return logger
+    return Logger()
