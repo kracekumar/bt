@@ -22,7 +22,7 @@ from .server import run_server
 
 logger = get_logger()
 
-# asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 Peer = namedtuple('Peer', ['pending_blocks', 'missing_blocks',
                            'ongoing_pieces', 'bitfield'])
