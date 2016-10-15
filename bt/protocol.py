@@ -391,7 +391,10 @@ class PeerConnection(BaseConnection):
     async def start(self):
         while PeerState.Stopped.value not in self.current_state:
             try:
-                self.peer = self.available_peers.get_nowait()
+                try:
+                    self.peer = self.available_peers.get_nowait()
+                except asyncio.queues.QueueEmpty as e:
+                    await asyncio.sleep(1)
 
                 if self.peer[1] < 80:
                     # Who runs torrent client on these ports? Rogue clients
@@ -400,7 +403,7 @@ class PeerConnection(BaseConnection):
                 try:
                     fut = asyncio.open_connection(self.peer[0], self.peer[1])
                     self.reader, self.writer = await asyncio.wait_for(fut,
-                        timeout=5)
+                        timeout=10)
                 except CancelledError:
                     logger.info("Remote peer {} didn't respond".format(
                         self.peer))
@@ -409,13 +412,10 @@ class PeerConnection(BaseConnection):
                     logger.info('Connection refused {}'.format(self.peer))
                     await asyncio.sleep(0.1)
                     continue
-                except OSError as e:
+                except (OSError, KeyboardInterrupt, asyncio.TimeoutError) as e:
                     await asyncio.sleep(0.1)
                     logger.error(e)
                     continue
-                except KeyboardInterrupt as e:
-                    logger.error(e)
-                    break
 
                 logger.debug('Remote connection with peer {}:{}'.format(
                 *self.peer))
