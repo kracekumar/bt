@@ -70,8 +70,12 @@ class PeerStreamIterator:
                         return message
                 logger.debug('I m stuck at reading from socket, buffer length: {}'.format(
                     len(self.buffer)))
-                data = await asyncio.wait_for(self.reader.read(
-                    PeerStreamIterator.CHUNK_SIZE), timeout=5)
+                try:
+                    data = await asyncio.wait_for(self.reader.read(
+                        PeerStreamIterator.CHUNK_SIZE), timeout=10)
+                except asyncio.TimeoutError as e:
+                    logger.error(e)
+                    raise StopAsyncIteration()
                 if data:
                     self.buffer += data
                     message = self.parse()
