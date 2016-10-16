@@ -3,7 +3,7 @@
 import os
 import logging
 import sys
-import asyncio
+import curio
 import warnings
 from concurrent.futures import CancelledError
 
@@ -14,24 +14,12 @@ from bt import Client, get_logger, run_server
 
 
 def manage_event_loop_for_download(path, savedir):
-    loop = asyncio.get_event_loop()
-    #loop.set_debug(True)
     client = Client()
     try:
-        loop.run_until_complete(client.download(path, savedir))
-    except asyncio.CancelledError as e:
-        import ipdb;ipdb.set_trace()
-        logging.warning('Event was cancelled')
-    except Exception as e:
-        print('Exception happened!!', e)
-    finally:
-        # import ipdb;ipdb.set_trace()
-        # task.cancel()
-        # try:
-        #     loop.run_until_complete(task)
-        # except Exception:
-        #     pass 
-        loop.close()
+        curio.run(client.download(path, savedir), with_monitor=True)
+    except KeyboardInterrupt as e:
+        raise
+        pass
 
 
 @click.group()

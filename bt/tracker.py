@@ -175,22 +175,20 @@ class UDPTracker(BaseTracker):
 class HTTPTracker(BaseTracker):
     def __init__(self, url, size, info_hash):
         super().__init__(url, size, info_hash)
-        self.client = aiohttp.ClientSession()
+        self.client = requests.Session()
 
     def close(self):
         self.client.close()
 
-    async def announce(self):
+    def announce(self):
         """
         """
         logger.debug('announce')
         params = self.build_params_for_announce()
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.url,
-                                   params=params) as resp:
-                if resp.status == 200:
-                    content = await resp.read()
-                    return self.parse_tracker_response(content)
+        resp = self.client.get(self.url, params=params)
+        if resp.status_code == 200:
+            content = resp.content
+            return self.parse_tracker_response(content)
 
     def bye(self, uploaded, downloaded):
         params = self.build_params_for_announce(

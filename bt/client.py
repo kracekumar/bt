@@ -5,10 +5,12 @@ import time
 import math
 import os
 from collections import namedtuple
+from memory_profiler import profile
 from hashlib import sha1
 import asyncio
 
 import uvloop
+import curio
 from progress.bar import Bar
 
 from .torrent_parser import parse
@@ -26,10 +28,17 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 Peer = namedtuple('Peer', ['pending_blocks', 'missing_blocks',
                            'ongoing_pieces', 'bitfield'])
-PendingRequest = namedtuple('PendingRequest', ['block', 'added'])
 
 # TODO: Accept this argument from user
 MAX_CONNECTIONS = 50
+
+
+class PendingRequest(ReprMixin):
+    __repr_fields__ = ('block', 'added')
+
+    def __init__(self, block, added):
+        self.block = block
+        self.added = added
 
 
 class Block(ReprMixin):
@@ -270,7 +279,7 @@ class DownloadManager:
 class Client:
     def __init__(self):
         self.tracker = None
-        self.available_peers = asyncio.Queue()
+        self.available_peers = curio.Queue()
         self.peers = []
         self.download_manager = None
         self.abort = False
@@ -283,6 +292,7 @@ class Client:
             block_offset=block_offset,
             data=data)
 
+    @profile
     async def download(self, path, savedir):
         torrent = parse(path)
         torrent.print_all_info()
@@ -292,23 +302,32 @@ class Client:
                                   size=torrent.info.length,
                                   info_hash=torrent.hash)
             self.tracker = tracker
-            resp = await tracker.announce()
+            resp = tracker.announce()
             self.previous = time.time()
             logger.debug("Tracker Resp: {}".format(resp))
             self.download_manager = DownloadManager(torrent, savedir)
-            # for peer in [('127.0.0.1', 51213)]:
-            #     self.available_peers.put_nowait(peer)
+
             for peer in resp.peers:
-                self.available_peers.put_nowait(peer)
+                await self.available_peers.put(peer)
             self.peers = [PeerConnection(
                 info_hash=torrent.hash,
                 peer_id=tracker.peer_id,
                 available_peers=self.available_peers,
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
-                          for _ in range(20)]
+                          for _ in range(7)]
 
-            await self.monitor()
+            tasks = []
+            for peer in self.peers:
+                tasks.append(await peer._start())
+
+            # tasks.append(await print_memory())
+            try:
+                await curio.gather(tasks)
+            except KeyboardInterrupt as e:
+                return None
+
+            # await self.monitor()
 
         elif torrent.announce.startswith(b'udp'):
             tracker = UDPTracker(url=torrent.announce,

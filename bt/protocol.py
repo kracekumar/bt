@@ -5,6 +5,7 @@ from enum import Enum
 import struct
 import asyncio
 import socket
+import curio
 
 from concurrent.futures import CancelledError
 
@@ -51,10 +52,9 @@ class PeerStreamIterator:
     """
     CHUNK_SIZE = 10*1024
 
-    def __init__(self, reader, initial=None):
-        self.reader = reader
+    def __init__(self, sock, initial=None):
+        self.sock = sock
         self.buffer = initial if initial else b''
-        self.i = 0
 
     async def __aiter__(self):
         return self
@@ -71,9 +71,10 @@ class PeerStreamIterator:
                 logger.debug('I m stuck at reading from socket, buffer length: {}'.format(
                     len(self.buffer)))
                 try:
-                    data = await asyncio.wait_for(self.reader.read(
-                        PeerStreamIterator.CHUNK_SIZE), timeout=10)
-                except asyncio.TimeoutError as e:
+                    await curio.sleep(0.1)
+                    data = await curio.timeout_after(
+                        10, self.sock.recv(PeerStreamIterator.CHUNK_SIZE))
+                except curio.TaskTimeout as e:
                     logger.error(e)
                     raise StopAsyncIteration()
                 if data:
@@ -118,6 +119,7 @@ class PeerStreamIterator:
             if message_length == 0:
                 return KeepAliveMessage()
 
+            logger.debug("{} buffer: {}".format(message_length, len(self.buffer)))
             if len(self.buffer) >= message_length:
                 message_id = struct.unpack('>b', self.buffer[4:5])[0]
 
@@ -183,17 +185,16 @@ class BaseConnection:
         self.peer = None
         self.current_state = []
         self.remote_id = None
-        self.writer = None
-        self.reader = None
+        self.sock = None
 
-        self.is_interested_msg_sent = False
-        self.future = asyncio.ensure_future(self.start())
+    async def _start(self):
+        return await curio.spawn(self.start())
 
     async def handle_message(self, buffer):
         if not buffer:
             await self.send_interested()
 
-        async for message in PeerStreamIterator(self.reader, buffer):
+        async for message in PeerStreamIterator(self.sock, buffer):
             if PeerState.Stopped.value in self.current_state:
                 break
 
@@ -250,23 +251,28 @@ class BaseConnection:
                     self.peer))
                 self.current_state.append(PeerState.PendingRequest.value)
                 await self.send_request()
+                await curio.sleep(1)
 
     async def send_handshake(self):
         """
         Send the initial handshake to the remote peer and wait for the peer
         to respond with its handshake.
         """
-        self.writer.write(
-            HandshakeMessage(self.info_hash, self.peer_id).encode())
-        await self.writer.drain()
+        try:
+            await self.sock.sendall(
+                HandshakeMessage(self.info_hash, self.peer_id).encode())
+        except ConnectionResetError as e:
+            logger.error(e)
 
         buf = b''
         while len(buf) < MessageLength.handshake.value:
             try:
-                buf = await asyncio.wait_for(
-                    self.reader.read(PeerStreamIterator.CHUNK_SIZE), timeout=5)
-            except ConnectionResetError as e:
+                buf = await curio.timeout_after(
+                    10,
+                    self.sock.recv(PeerStreamIterator.CHUNK_SIZE))
+            except (curio.TaskTimeout, ConnectionResetError) as e:
                 logger.error(e)
+                return
 
         response = HandshakeMessage.decode(buf[:MessageLength.handshake.value])
 
@@ -296,8 +302,7 @@ class BaseConnection:
         self.current_state.append(PeerState.Interested.value)
         message = InterestedMessage()
         logger.debug('Sending interested message')
-        self.writer.write(message.encode())
-        await self.writer.drain()
+        await self.sock.sendall(message.encode())
 
     async def send_request(self):
         """Request peer to transfer the pieces.
@@ -311,14 +316,11 @@ class BaseConnection:
                          '{length} byte from peer {peer}'.format(
                              piece=block.piece, block=block.offset,
                              length=block.length, peer=self.remote_id))
-            self.writer.write(message)
-            await self.writer.drain()
+            await self.sock.sendall(message)
 
     def cancel(self):
-        if not self.future.done():
-            self.future.cancel()
-        if self.writer:
-            self.writer.close()
+        if self.sock:
+            self.sock.close()
 
         self.available_peers.task_done()
 
@@ -326,6 +328,53 @@ class BaseConnection:
         self.current_state.append(PeerState.Stopped)
         if not self.future.done():
             self.future.cancel()
+
+
+class PeerConnection(BaseConnection):
+    async def start(self):
+        while PeerState.Stopped.value not in self.current_state:
+            try:
+                try:
+                    self.peer = await self.available_peers.get()
+                except asyncio.queues.QueueEmpty as e:
+                    await curio.sleep(5)
+                    continue
+                    #exit(1)
+                if self.peer[1] < 80:
+                    # Who runs torrent client on these ports? Rogue clients
+                    continue
+                logger.info('got peer {}'.format(self.peer))
+                try:
+                    self.sock = await curio.open_connection(self.peer[0],
+                                                       self.peer[1])
+                except CancelledError:
+                    logger.info("Remote peer {} didn't respond".format(
+                        self.peer))
+                    continue
+                except ConnectionRefusedError:
+                    logger.info('Connection refused {}'.format(self.peer))
+                    await curio.sleep(1)
+                    continue
+                except (OSError, KeyboardInterrupt, asyncio.TimeoutError) as e:
+                    await curio.sleep(1)
+                    logger.error(e)
+                    continue
+
+                logger.debug('Remote connection with peer {}:{}'.format(
+                *self.peer))
+
+                logger.debug('Adding client to choke state')
+                self.current_state.append(PeerState.Choked.value)
+
+                # Do handshake and react accordingly
+                buffer = await self.send_handshake()
+                logger.debug('start')
+                # buffer = await self.send_interested()
+
+                # Parse the rest of the message and decide next step.
+                await self.handle_message(buffer)
+            except (asyncio.TimeoutError, ProtocolError) as e:
+                logger.debug(e)
 
 
 class UDPConnection(BaseConnection):
@@ -389,51 +438,3 @@ class UDPConnection(BaseConnection):
                 #     break
         except socket.error as e:
             logger.error(e)
-
-    
-class PeerConnection(BaseConnection):
-    async def start(self):
-        while PeerState.Stopped.value not in self.current_state:
-            try:
-                try:
-                    self.peer = self.available_peers.get_nowait()
-                except asyncio.queues.QueueEmpty as e:
-                    await asyncio.sleep(5)
-                    continue
-                    #exit(1)
-                if self.peer[1] < 80:
-                    # Who runs torrent client on these ports? Rogue clients
-                    continue
-                logger.info('got peer {}'.format(self.peer))
-                try:
-                    fut = asyncio.open_connection(self.peer[0], self.peer[1])
-                    self.reader, self.writer = await asyncio.wait_for(fut,
-                        timeout=10)
-                except CancelledError:
-                    logger.info("Remote peer {} didn't respond".format(
-                        self.peer))
-                    continue
-                except ConnectionRefusedError:
-                    logger.info('Connection refused {}'.format(self.peer))
-                    await asyncio.sleep(1)
-                    continue
-                except (OSError, KeyboardInterrupt, asyncio.TimeoutError) as e:
-                    await asyncio.sleep(1)
-                    logger.error(e)
-                    continue
-
-                logger.debug('Remote connection with peer {}:{}'.format(
-                *self.peer))
-
-                logger.debug('Adding client to choke state')
-                self.current_state.append(PeerState.Choked.value)
-
-                # Do handshake and react accordingly
-                buffer = await self.send_handshake()
-                logger.debug('start')
-                # buffer = await self.send_interested()
-
-                # Parse the rest of the message and decide next step.
-                return await self.handle_message(buffer)
-            except (asyncio.TimeoutError, ProtocolError) as e:
-                logger.debug(e)
