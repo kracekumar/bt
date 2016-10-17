@@ -313,19 +313,18 @@ class Client:
                 available_peers=self.available_peers,
                 download_manager=self.download_manager,
                 on_block_complete=self.on_block_complete)
-                          for _ in range(7)]
+                          for _ in range(2)]
 
             tasks = []
             for peer in self.peers:
                 tasks.append(await peer._start())
 
-            # tasks.append(await print_memory())
+            tasks.append(await self.monitor())
+
             try:
                 await curio.gather(tasks)
             except KeyboardInterrupt as e:
                 return None
-
-            # await self.monitor()
 
         elif torrent.announce.startswith(b'udp'):
             tracker = UDPTracker(url=torrent.announce,
@@ -381,7 +380,7 @@ class Client:
 
     async def monitor(self):
         # Interval in seconds
-        interval = 15 * 60
+        interval = 10 * 60
 
         while True:
             if self.download_manager.complete:
@@ -393,10 +392,7 @@ class Client:
 
             current = time.time()
             if (self.previous + interval < current):
-                response = await self.tracker.connect(
-                    first=self.previous if self.previous else False,
-                    uploaded=self.download_manager.bytes_uploaded,
-                    downloaded=self.download_manager.bytes_downloaded)
+                response = self.tracker.announce()
                 logger.debug('Tracker response: {}'.format(response))
                 if response:
                     self.previous = current
@@ -404,8 +400,7 @@ class Client:
                     self._empty_queue()
                     for peer in response.peers:
                         self.available_peers.put_nowait(peer)
-            else:
-                await asyncio.sleep(0.1)
+            await curio.sleep(0.1)
         self.stop()
 
     def _empty_queue(self):

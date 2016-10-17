@@ -211,27 +211,6 @@ class HTTPTracker(BaseTracker):
                 'supportcrypto': 1,
                 'event': 'started'}
 
-    async def connect(self, first, uploaded, downloaded, event=''):
-        params = self.build_params_for_announce()
-        params['uploaded'] = uploaded
-        params['downloaded'] = downloaded
-        params['left'] = self.size
-
-        if not first:
-            params.pop('event')
-
-        if event != '':
-            params['event'] = event
-
-        logger.debug('Connecting tracker')
-
-        async with self.client.get(self.url, params=params) as response:
-            if not response.status == 200:
-                raise Exception('Failed request; {}'.format(
-                    await response.read()))
-            data = await response.read()
-            return self.parse_tracker_response(data)
-
 
 def _decode_port(port):
     return unpack(">H", port)[0]

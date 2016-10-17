@@ -71,7 +71,7 @@ class PeerStreamIterator:
                 logger.debug('I m stuck at reading from socket, buffer length: {}'.format(
                     len(self.buffer)))
                 try:
-                    await curio.sleep(0.1)
+                    await curio.sleep(0)
                     data = await self.sock.recv(PeerStreamIterator.CHUNK_SIZE)
                     if not data:
                         raise StopAsyncIteration()
@@ -251,8 +251,9 @@ class BaseConnection:
                 logger.debug('Sending download request {}'.format(
                     self.peer))
                 self.current_state.append(PeerState.PendingRequest.value)
-                await self.send_request()
-                await curio.sleep(1)
+                # How about atleast firing 5 requests?
+                for _ in range(10):
+                    await self.send_request()
 
     async def send_handshake(self):
         """
