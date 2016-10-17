@@ -72,8 +72,9 @@ class PeerStreamIterator:
                     len(self.buffer)))
                 try:
                     await curio.sleep(0.1)
-                    data = await curio.timeout_after(
-                        10, self.sock.recv(PeerStreamIterator.CHUNK_SIZE))
+                    data = await self.sock.recv(PeerStreamIterator.CHUNK_SIZE)
+                    if not data:
+                        raise StopAsyncIteration()
                 except curio.TaskTimeout as e:
                     logger.error(e)
                     raise StopAsyncIteration()
