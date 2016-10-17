@@ -291,7 +291,6 @@ class Client:
             block_offset=block_offset,
             data=data)
 
-    @profile
     async def download(self, path, savedir):
         torrent = parse(path)
         torrent.print_all_info()
