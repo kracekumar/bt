@@ -5,7 +5,6 @@ import time
 import math
 import os
 from collections import namedtuple
-from memory_profiler import profile
 from hashlib import sha1
 import asyncio
 
